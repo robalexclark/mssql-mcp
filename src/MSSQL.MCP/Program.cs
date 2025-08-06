@@ -1,9 +1,7 @@
-﻿using Akka.Hosting;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using MSSQL.MCP.Configuration;
 using MSSQL.MCP.Database;
-using MSSQL.MCP.Actors;
 
 var hostBuilder = new HostBuilder();
 
@@ -40,26 +38,6 @@ hostBuilder
     services.AddMcpServer()
         .WithStdioServerTransport()
         .WithToolsFromAssembly();
-
-    // Add Akka.NET
-    services.AddAkka("MSSQLMcpActorSystem", (builder, sp) =>
-    {
-        builder
-            .ConfigureLoggers(configBuilder =>
-            {
-                configBuilder.ClearLoggers();
-                configBuilder.AddLoggerFactory();
-            })
-            .WithActors((system, registry, resolver) =>
-            {
-                // Database validation actor - tests actual connection
-                var dbValidationActorProps = resolver.Props<DatabaseValidationActor>();
-                var _ = system.ActorOf(dbValidationActorProps, "database-validation");
-                
-                // We would normally register this actor in the registry, but since it dies immediately after validation,
-                // there's not much point in keeping it around.
-            });
-    });
 });
 
 var host = hostBuilder.Build();
