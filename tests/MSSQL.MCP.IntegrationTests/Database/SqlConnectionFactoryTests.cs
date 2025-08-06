@@ -1,5 +1,6 @@
+using System;
 using MSSQL.MCP.IntegrationTests.Infrastructure;
-using Microsoft.Data.SqlClient;
+using Microsoft.Data.Sqlite;
 using Xunit;
 
 namespace MSSQL.MCP.IntegrationTests.Database;
@@ -18,7 +19,7 @@ public class SqlConnectionFactoryTests(DatabaseTestFixture fixture)
 
         // Assert
         Assert.NotNull(connection);
-        Assert.IsType<SqlConnection>(connection);
+        Assert.IsType<SqliteConnection>(connection);
         Assert.Equal(fixture.ConnectionString, connection.ConnectionString);
     }
 
@@ -80,9 +81,11 @@ public class SqlConnectionFactoryTests(DatabaseTestFixture fixture)
             tasks.Add(Task.Run(async () =>
             {
                 await using var connection = await fixture.ConnectionFactory.CreateOpenConnectionAsync();
-                await using var command = new SqlCommand("SELECT 1", connection);
-                var result = await command.ExecuteScalarAsync();
-                Assert.Equal(1, result);
+                await using var command = connection.CreateCommand();
+                command.CommandText = "SELECT 1";
+                var resultObj = await command.ExecuteScalarAsync();
+                var result = Convert.ToInt64(resultObj);
+                Assert.Equal(1L, result);
             }));
         }
 
