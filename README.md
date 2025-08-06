@@ -6,13 +6,12 @@ A .NET-powered Model Context Protocol (MCP) server for Microsoft SQL Server.
 
 Why does this exist? Because the other MCP solutions in market for this are generally janky pieces of shit that don't work - certainly not on Windows.
 
-This MCP server provides AI agents with robust, reliable access to Microsoft SQL Server databases through a clean, well-architected .NET application using Akka.NET for internal coordination and the official MCP C# SDK for protocol compliance.
+This MCP server provides AI agents with robust, reliable access to Microsoft SQL Server databases through a clean, well-architected .NET application built with the official MCP C# SDK.
 
 ## Features
 
 - **Schema Discovery**: AI agents can explore database structure without writing complex SQL
 - **Query Execution**: Full SQL support for SELECT, INSERT, UPDATE, DELETE, and DDL operations
-- **Connection Validation**: Automatic database connectivity validation on startup
 - **Error Handling**: Comprehensive error handling with clear, actionable error messages
 - **Table Formatting**: Query results formatted in readable tables for AI consumption
 - **Docker Support**: Easy deployment with built-in .NET Docker tooling
@@ -420,7 +419,6 @@ This software is licensed under Apache 2.0 and is available "as is" - this means
 
 ## Architecture
 
-- **[Akka.NET](https://getakka.net/)**: Used for internal actor system coordination and database validation
 - **[MCP C# SDK](https://github.com/modelcontextprotocol/csharp-sdk)**: Official Model Context Protocol implementation
 - **Microsoft.Data.SqlClient**: High-performance SQL Server connectivity
 
