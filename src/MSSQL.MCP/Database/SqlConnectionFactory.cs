@@ -20,10 +20,9 @@ public class SqlConnectionFactory(IOptions<DatabaseOptions> databaseOptions) : I
             await connection.OpenAsync(cancellationToken);
             return connection;
         }
-        catch
+        finally
         {
-            connection.Dispose();
-            throw;
+            await connection.DisposeAsync();
         }
     }
 

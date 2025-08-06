@@ -54,7 +54,7 @@ hostBuilder
             {
                 // Database validation actor - tests actual connection
                 var dbValidationActorProps = resolver.Props<DatabaseValidationActor>();
-                var dbValidationActor = system.ActorOf(dbValidationActorProps, "database-validation");
+                var _ = system.ActorOf(dbValidationActorProps, "database-validation");
                 
                 // We would normally register this actor in the registry, but since it dies immediately after validation,
                 // there's not much point in keeping it around.
