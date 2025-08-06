@@ -7,10 +7,10 @@ namespace MSSQL.MCP.Actors;
 /// </summary>
 public sealed class DatabaseValidationActor : ReceiveActor
 {
-    private readonly ISqlConnectionFactory _connectionFactory;
+    private readonly IDbConnectionFactory _connectionFactory;
     private readonly ILoggingAdapter _logger;
 
-    public DatabaseValidationActor(ISqlConnectionFactory connectionFactory)
+    public DatabaseValidationActor(IDbConnectionFactory connectionFactory)
     {
         _connectionFactory = connectionFactory;
         _logger = Context.GetLogger();
