@@ -1,12 +1,11 @@
-using System.Data.Common;
 using Microsoft.Data.SqlClient;
-using MSSQL.MCP.Configuration;
+using System.Data.Common;
 
 namespace MSSQL.MCP.Database;
 
-public class SqlConnectionFactory(IOptions<DatabaseOptions> databaseOptions) : IDbConnectionFactory
+public class SqlConnectionFactory(string connectionString) : IDbConnectionFactory
 {
-    private readonly string _connectionString = databaseOptions.Value.ConnectionString;
+    private readonly string _connectionString = connectionString;
 
     public DbConnection CreateConnection()
     {

@@ -1,11 +1,4 @@
 <Solution>
-  <Folder Name="/build/">
-    <File Path="Directory.Build.props" />
-    <File Path="Directory.Packages.props" />
-    <File Path="global.json" />
-    <File Path="NuGet.Config" />
-    <File Path="README.md" />
-  </Folder>
   <Project Path="src/MSSQL.MCP/MSSQL.MCP.csproj" />
   <Project Path="tests/MSSQL.MCP.IntegrationTests/MSSQL.MCP.IntegrationTests.csproj" />
 </Solution>

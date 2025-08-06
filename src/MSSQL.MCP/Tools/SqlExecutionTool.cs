@@ -231,7 +231,7 @@ Please provide only the T-SQL statement without explanations or formatting.";
             var row = new object[columnCount];
             for (int i = 0; i < columnCount; i++)
             {
-                row[i] = reader.IsDBNull(i) ? "NULL" : reader.GetValue(i);
+                row[i] = await reader.IsDBNullAsync(i) ? "NULL" : reader.GetValue(i);
                 var valueLength = row[i].ToString()?.Length ?? 4;
                 columnWidths[i] = Math.Max(columnWidths[i], valueLength);
             }

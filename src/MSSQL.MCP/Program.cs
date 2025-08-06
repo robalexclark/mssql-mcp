@@ -1,45 +1,71 @@
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
-using MSSQL.MCP.Configuration;
+using Microsoft.Extensions.DependencyInjection;
 using MSSQL.MCP.Database;
 
-var hostBuilder = new HostBuilder();
+namespace MSSQL.MCP;
 
-hostBuilder
-    .ConfigureAppConfiguration((context, builder) =>
-    {
-        builder.AddEnvironmentVariables();
-        // Map MSSQL_CONNECTION_STRING to Database:ConnectionString
-        builder.AddInMemoryCollection([
-            new KeyValuePair<string, string?>("Database:ConnectionString", 
-                Environment.GetEnvironmentVariable("MSSQL_CONNECTION_STRING"))
-        ]);
-    })
-    .ConfigureServices((context, services) =>
+public static class Program
 {
-    // Configure logging to stderr for MCP protocol compatibility
-    services.AddLogging(builder =>
+    /// <summary>
+    /// Entry point for the MCP server application.
+    /// Sets up logging, configures the MCP server with standard I/O transport and tool discovery,
+    /// builds the host, and runs the server asynchronously.
+    /// </summary>
+    /// <param name="args">Command-line arguments.</param>
+    public static async Task Main(string[] args)
     {
-        builder.AddConsole(consoleLogOptions =>
+        // Create the application host builder
+        var builder = Host.CreateApplicationBuilder(args);
+
+        // Configure console logging with Trace level
+        builder.Logging.AddConsole(consoleLogOptions =>
         {
-            consoleLogOptions.LogToStandardErrorThreshold = Microsoft.Extensions.Logging.LogLevel.Trace;
+            consoleLogOptions.LogToStandardErrorThreshold = LogLevel.Trace;
         });
-    });
 
-    // Configure Database options with validation
-    services.AddSingleton<IValidateOptions<DatabaseOptions>, DatabaseOptionsValidator>();
-    services.AddOptionsWithValidateOnStart<DatabaseOptions>()
-        .BindConfiguration("Database");
+        // Retrieve the connection string from environment variables
+        var connectionString = Environment.GetEnvironmentVariable("MSSQL_CONNECTION_STRING");
 
-    // Register SQL Connection Factory
-    services.AddSingleton<IDbConnectionFactory, SqlConnectionFactory>();
+        if (string.IsNullOrWhiteSpace(connectionString))
+        {
+            await Console.Error.WriteLineAsync("Error: MSSQL_CONNECTION_STRING environment variable is not set.");
+            Environment.Exit(1);
+            return;
+        }
 
-    // Add MCP Server
-    services.AddMcpServer()
-        .WithStdioServerTransport()
-        .WithToolsFromAssembly();
-});
+        // Register IDbConnectionFactory with the connection string
+        builder.Services.AddSingleton<IDbConnectionFactory>(provider =>
+        {
+            return new SqlConnectionFactory(connectionString);
+        });
 
-var host = hostBuilder.Build();
+        // Register MCP server and tools (instance-based)
+        builder.Services
+            .AddMcpServer()
+            .WithStdioServerTransport()
+            .WithToolsFromAssembly();
 
-await host.RunAsync();
+        // Build the host
+        var host = builder.Build();
+
+        // Setup cancellation token for graceful shutdown (Ctrl+C or SIGTERM)
+        using var cts = new CancellationTokenSource();
+        Console.CancelKeyPress += (sender, eventArgs) =>
+        {
+            eventArgs.Cancel = true; // Prevent the process from terminating immediately
+            cts.Cancel();
+        };
+
+        try
+        {
+            // Run the host with cancellation support
+            await host.RunAsync(cts.Token);
+        }
+        catch (Exception ex)
+        {
+            await Console.Error.WriteLineAsync($"Unhandled exception: {ex}");
+            Environment.ExitCode = 1;
+        }
+    }
+}
