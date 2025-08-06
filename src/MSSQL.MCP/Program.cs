@@ -32,7 +32,7 @@ hostBuilder
         .BindConfiguration("Database");
 
     // Register SQL Connection Factory
-    services.AddSingleton<ISqlConnectionFactory, SqlConnectionFactory>();
+    services.AddSingleton<IDbConnectionFactory, SqlConnectionFactory>();
 
     // Add MCP Server
     services.AddMcpServer()

@@ -1,4 +1,5 @@
 using System.ComponentModel;
+using System.Data.Common;
 using System.Text.RegularExpressions;
 using Microsoft.Data.SqlClient;
 using Microsoft.Extensions.Logging;
@@ -8,7 +9,7 @@ using MSSQL.MCP.Database;
 namespace MSSQL.MCP.Tools;
 
 [McpServerToolType]
-public class SqlExecutionTool(ISqlConnectionFactory connectionFactory, ILogger<SqlExecutionTool> logger)
+public class SqlExecutionTool(IDbConnectionFactory connectionFactory, ILogger<SqlExecutionTool> logger)
 {
     // Regex to detect valid T-SQL keywords at the beginning of queries
     private static readonly Regex ValidTSqlStartPattern = new(
@@ -86,7 +87,8 @@ Please provide only the T-SQL statement without explanations or formatting.";
                 trimmedQuery.Length > 30 ? trimmedQuery[..30] + "..." : trimmedQuery);
 
             await using var connection = await connectionFactory.CreateOpenConnectionAsync(cancellationToken);
-            await using var command = new SqlCommand(query, connection);
+            await using var command = connection.CreateCommand();
+            command.CommandText = query;
             
             // Determine if this is a SELECT query or a command
             var isSelectQuery = trimmedQuery.StartsWith("SELECT", StringComparison.OrdinalIgnoreCase) ||
@@ -109,9 +111,9 @@ Please provide only the T-SQL statement without explanations or formatting.";
                 return result;
             }
         }
-        catch (SqlException ex)
+        catch (DbException ex)
         {
-            logger.LogError(ex, "SQL execution failed with SQL error: {SqlErrorMessage}", ex.Message);
+            logger.LogError(ex, "SQL execution failed with database error: {ErrorMessage}", ex.Message);
             return $"SQL Error: {ex.Message}";
         }
         catch (Exception ex)
@@ -127,16 +129,18 @@ Please provide only the T-SQL statement without explanations or formatting.";
         try
         {
             await using var connection = await connectionFactory.CreateOpenConnectionAsync(cancellationToken);
-            
-            var query = @"
-                SELECT 
+
+            string query;
+            if (connection is SqlConnection)
+            {
+                query = @"SELECT
                     t.TABLE_SCHEMA,
                     t.TABLE_NAME,
                     t.TABLE_TYPE,
                     ISNULL(p.rows, 0) as ROW_COUNT
                 FROM INFORMATION_SCHEMA.TABLES t
                 LEFT JOIN (
-                    SELECT 
+                    SELECT
                         SCHEMA_NAME(o.schema_id) as schema_name,
                         o.name as table_name,
                         SUM(p.rows) as rows
@@ -147,8 +151,14 @@ Please provide only the T-SQL statement without explanations or formatting.";
                 ) p ON t.TABLE_SCHEMA = p.schema_name AND t.TABLE_NAME = p.table_name
                 WHERE t.TABLE_TYPE = 'BASE TABLE'
                 ORDER BY t.TABLE_SCHEMA, t.TABLE_NAME";
+            }
+            else
+            {
+                query = @"SELECT '' AS TABLE_SCHEMA, name AS TABLE_NAME, type AS TABLE_TYPE FROM sqlite_master WHERE type = 'table' ORDER BY name";
+            }
 
-            await using var command = new SqlCommand(query, connection);
+            await using var command = connection.CreateCommand();
+            command.CommandText = query;
             await using var reader = await command.ExecuteReaderAsync(cancellationToken);
             
             return await FormatQueryResults(reader, cancellationToken);
@@ -165,9 +175,11 @@ Please provide only the T-SQL statement without explanations or formatting.";
         try
         {
             await using var connection = await connectionFactory.CreateOpenConnectionAsync(cancellationToken);
-            
-            var query = @"
-                SELECT 
+
+            string query;
+            if (connection is SqlConnection)
+            {
+                query = @"SELECT
                     SCHEMA_NAME,
                     SCHEMA_OWNER,
                     DEFAULT_CHARACTER_SET_CATALOG,
@@ -175,7 +187,13 @@ Please provide only the T-SQL statement without explanations or formatting.";
                     DEFAULT_CHARACTER_SET_NAME
                 FROM INFORMATION_SCHEMA.SCHEMATA
                 ORDER BY SCHEMA_NAME";
-            await using var command = new SqlCommand(query, connection);
+            }
+            else
+            {
+                query = "SELECT 'main' AS SCHEMA_NAME, '' AS SCHEMA_OWNER";
+            }
+            await using var command = connection.CreateCommand();
+            command.CommandText = query;
             await using var reader = await command.ExecuteReaderAsync(cancellationToken);
             
             return await FormatQueryResults(reader, cancellationToken);
@@ -186,7 +204,7 @@ Please provide only the T-SQL statement without explanations or formatting.";
         }
     }
 
-    private static async Task<string> FormatQueryResults(SqlDataReader reader, CancellationToken cancellationToken)
+    private static async Task<string> FormatQueryResults(DbDataReader reader, CancellationToken cancellationToken)
     {
         var result = new System.Text.StringBuilder();
         
