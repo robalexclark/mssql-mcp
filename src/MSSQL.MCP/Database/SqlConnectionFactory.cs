@@ -1,4 +1,4 @@
-using Microsoft.Data.SqlClient;
+﻿using Microsoft.Data.SqlClient;
 using System.Data.Common;
 
 namespace MSSQL.MCP.Database;
@@ -20,9 +20,10 @@ public class SqlConnectionFactory(string connectionString) : IDbConnectionFactor
             await connection.OpenAsync(cancellationToken);
             return connection;
         }
-        finally
+        catch
         {
             await connection.DisposeAsync();
+            throw;
         }
     }
 

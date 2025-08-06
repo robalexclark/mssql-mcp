@@ -1,4 +1,4 @@
-using System.ComponentModel;
+﻿using System.ComponentModel;
 using System.Data.Common;
 using System.Text.RegularExpressions;
 using Microsoft.Data.SqlClient;
@@ -239,17 +239,17 @@ Please provide only the T-SQL statement without explanations or formatting.";
         }
 
         // Build header
-        result.AppendLine(string.Join(" | ", columnNames.Select((name, i) => name.PadRight(columnWidths[i]))));
-        result.AppendLine(string.Join("-+-", columnWidths.Select(w => new string('-', w))));
+        result.Append(string.Join(" | ", columnNames.Select((name, i) => name.PadRight(columnWidths[i])))).Append("\n");
+        result.Append(string.Join("-+-", columnWidths.Select(w => new string('-', w)))).Append("\n");
 
         // Build data rows
         foreach (var row in rows)
         {
-            result.AppendLine(string.Join(" | ", row.Select((value, i) => 
-                (value.ToString() ?? "NULL").PadRight(columnWidths[i]))));
+            result.Append(string.Join(" | ", row.Select((value, i) => 
+                (value.ToString() ?? "NULL").PadRight(columnWidths[i])))).Append("\n"); ;
         }
 
-        result.AppendLine($"\n({rows.Count} row(s) returned)");
+        result.Append($"\n({rows.Count} row(s) returned)").Append("\n"); ;
         
         return result.ToString();
     }
