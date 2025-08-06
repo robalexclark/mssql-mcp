@@ -1,6 +1,5 @@
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
-using Microsoft.Extensions.DependencyInjection;
 using MSSQL.MCP.Database;
 
 namespace MSSQL.MCP;
@@ -48,6 +47,23 @@ public static class Program
 
         // Build the host
         var host = builder.Build();
+
+
+        // Test the database connection before running the host
+        try
+        {
+            var dbFactory = host.Services.GetRequiredService<IDbConnectionFactory>();
+            using var connection = dbFactory.CreateConnection();
+            await connection.OpenAsync();
+            Console.WriteLine("Database connection test succeeded.");
+        }
+        catch (Exception dbEx)
+        {
+            await Console.Error.WriteLineAsync($"Database connection test failed: {dbEx.Message}");
+            Environment.Exit(1);
+            return;
+        }
+
 
         // Setup cancellation token for graceful shutdown (Ctrl+C or SIGTERM)
         using var cts = new CancellationTokenSource();

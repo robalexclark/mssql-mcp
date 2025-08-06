@@ -246,10 +246,10 @@ Please provide only the T-SQL statement without explanations or formatting.";
         foreach (var row in rows)
         {
             result.Append(string.Join(" | ", row.Select((value, i) => 
-                (value.ToString() ?? "NULL").PadRight(columnWidths[i])))).Append("\n"); ;
+                (value.ToString() ?? "NULL").PadRight(columnWidths[i])))).Append("\n");
         }
 
-        result.Append($"\n({rows.Count} row(s) returned)").Append("\n"); ;
+        result.Append($"\n({rows.Count} row(s) returned)").Append("\n");
         
         return result.ToString();
     }
