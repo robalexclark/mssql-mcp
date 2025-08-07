@@ -54,7 +54,7 @@ The query parameter must contain ONLY the T-SQL statement - no explanations, mar
         CancellationToken cancellationToken = default)
     {
         // Log the incoming query for debugging
-        _logger.LogInformation("Received SQL execution request. Query length: {QueryLength} characters", query.Length );
+        _logger.LogInformation("Received SQL execution request. Query length: {QueryLength} characters", query.Length);
         _logger.LogDebug("SQL Query received: {Query}", query);
 
         if (string.IsNullOrWhiteSpace(query))
@@ -69,7 +69,7 @@ The query parameter must contain ONLY the T-SQL statement - no explanations, mar
         {
             _logger.LogWarning("Invalid T-SQL query received. Query does not start with valid T-SQL keyword: {QueryStart}",
                 trimmedQuery.Length > 50 ? trimmedQuery[..50] + "..." : trimmedQuery);
-            
+
             return @"Error: Invalid T-SQL syntax. This tool only accepts valid Microsoft SQL Server T-SQL statements.
 
 Valid T-SQL statements must start with keywords like:
@@ -100,7 +100,7 @@ Please provide only the T-SQL statement without explanations or formatting.";
             await using var connection = await ResolveFactory(connectionName).CreateOpenConnectionAsync(cancellationToken);
             await using var command = connection.CreateCommand();
             command.CommandText = query;
-            
+
             // Determine if this is a SELECT query or a command
             var isSelectQuery = trimmedQuery.StartsWith("SELECT", StringComparison.OrdinalIgnoreCase) ||
                                trimmedQuery.StartsWith("WITH", StringComparison.OrdinalIgnoreCase);
@@ -174,7 +174,7 @@ Please provide only the T-SQL statement without explanations or formatting.";
             await using var command = connection.CreateCommand();
             command.CommandText = query;
             await using var reader = await command.ExecuteReaderAsync(cancellationToken);
-            
+
             return await FormatQueryResults(reader, cancellationToken);
         }
         catch (Exception ex)
@@ -212,7 +212,7 @@ Please provide only the T-SQL statement without explanations or formatting.";
             await using var command = connection.CreateCommand();
             command.CommandText = query;
             await using var reader = await command.ExecuteReaderAsync(cancellationToken);
-            
+
             return await FormatQueryResults(reader, cancellationToken);
         }
         catch (Exception ex)
@@ -221,39 +221,10 @@ Please provide only the T-SQL statement without explanations or formatting.";
         }
     }
 
-    [McpServerTool, Description("List all databases available on the server.")]
-    public async Task<string> ListDatabases(CancellationToken cancellationToken = default)
-    {
-        try
-        {
-            await using var connection = await connectionFactory.CreateOpenConnectionAsync(cancellationToken);
-
-            string query;
-            if (connection is SqlConnection)
-            {
-                query = @"SELECT name, owner_sid, state_desc FROM sys.databases ORDER BY name";
-            }
-            else
-            {
-                query = @"SELECT name, NULL AS owner_sid, NULL AS state_desc FROM pragma_database_list ORDER BY name";
-            }
-
-            await using var command = connection.CreateCommand();
-            command.CommandText = query;
-            await using var reader = await command.ExecuteReaderAsync(cancellationToken);
-
-            return await FormatQueryResults(reader, cancellationToken);
-        }
-        catch (Exception ex)
-        {
-            return $"Error listing databases: {ex.Message}";
-        }
-    }
-
     private static async Task<string> FormatQueryResults(DbDataReader reader, CancellationToken cancellationToken)
     {
         var result = new System.Text.StringBuilder();
-        
+
         if (!reader.HasRows)
         {
             return "Query executed successfully. No rows returned.";
@@ -263,7 +234,7 @@ Please provide only the T-SQL statement without explanations or formatting.";
         var columnCount = reader.FieldCount;
         var columnNames = new string[columnCount];
         var columnWidths = new int[columnCount];
-        
+
         for (int i = 0; i < columnCount; i++)
         {
             columnNames[i] = reader.GetName(i);
@@ -291,12 +262,12 @@ Please provide only the T-SQL statement without explanations or formatting.";
         // Build data rows
         foreach (var row in rows)
         {
-            result.Append(string.Join(" | ", row.Select((value, i) => 
+            result.Append(string.Join(" | ", row.Select((value, i) =>
                 (value.ToString() ?? "NULL").PadRight(columnWidths[i])))).Append("\n");
         }
 
         result.Append($"\n({rows.Count} row(s) returned)").Append("\n");
-        
+
         return result.ToString();
     }
-} 
+}

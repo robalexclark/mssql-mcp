@@ -1,4 +1,4 @@
-using Microsoft.Extensions.Hosting;
+﻿using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using MSSQL.MCP.Database;
 
@@ -55,8 +55,7 @@ public static class Program
         builder.Services
             .AddMcpServer()
             .WithStdioServerTransport()
-            .WithToolsFromAssembly()
-            .WithResourceProvidersFromAssembly();
+            .WithToolsFromAssembly();
 
         // Build the host
         var host = builder.Build();
