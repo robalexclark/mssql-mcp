@@ -9,23 +9,17 @@ using MSSQL.MCP.Database;
 namespace MSSQL.MCP.Tools;
 
 [McpServerToolType]
-public class SqlExecutionTool(IDbConnectionFactory connectionFactory, ILogger<SqlExecutionTool> logger, IServiceProvider? serviceProvider = null)
+public class SqlExecutionTool(IDbConnectionFactory connectionFactory, ILogger<SqlExecutionTool> logger)
 {
-    private readonly IDbConnectionFactory _defaultConnectionFactory = connectionFactory;
+    private readonly IDbConnectionFactory _connectionFactory = connectionFactory;
     private readonly ILogger<SqlExecutionTool> _logger = logger;
-    private readonly IServiceProvider _serviceProvider = serviceProvider ?? new ServiceCollection().BuildServiceProvider();
 
     // Regex to detect valid T-SQL keywords at the beginning of queries
     private static readonly Regex ValidTSqlStartPattern = new(
         @"^\s*(SELECT|INSERT|UPDATE|DELETE|WITH|CREATE|ALTER|DROP|GRANT|REVOKE|EXEC|EXECUTE|DECLARE|SET|USE|BACKUP|RESTORE|TRUNCATE|MERGE)\s+",
         RegexOptions.IgnoreCase | RegexOptions.Compiled);
 
-    private IDbConnectionFactory ResolveFactory(string? connectionName) =>
-        string.IsNullOrWhiteSpace(connectionName)
-            ? _defaultConnectionFactory
-            : _serviceProvider.GetRequiredKeyedService<IDbConnectionFactory>(connectionName);
-
-    [McpServerTool, Description(@"Execute T-SQL queries against the connected Microsoft SQL Server database. 
+    [McpServerTool, Description(@"Execute T-SQL queries against the connected Microsoft SQL Server database.
     
 IMPORTANT: This tool ONLY accepts valid T-SQL (Transact-SQL) syntax for Microsoft SQL Server.
 
@@ -49,8 +43,6 @@ The query parameter must contain ONLY the T-SQL statement - no explanations, mar
         Examples: 'SELECT * FROM Users', 'INSERT INTO Products VALUES (1, ''Name'')', 'CREATE TABLE Test (ID int)'
         Do NOT include explanations, markdown formatting, or non-SQL text.")]
         string query,
-        [Description("Optional name of the connection string to use, from MSSQL_CONNECTION_STRING_ENV_NAMES. Defaults to the first connection.")]
-        string? connectionName = null,
         CancellationToken cancellationToken = default)
     {
         // Log the incoming query for debugging
@@ -97,7 +89,7 @@ Please provide only the T-SQL statement without explanations or formatting.";
             _logger.LogInformation("Executing T-SQL query starting with: {QueryStart}",
                 trimmedQuery.Length > 30 ? trimmedQuery[..30] + "..." : trimmedQuery);
 
-            await using var connection = await ResolveFactory(connectionName).CreateOpenConnectionAsync(cancellationToken);
+            await using var connection = await _connectionFactory.CreateOpenConnectionAsync(cancellationToken);
             await using var command = connection.CreateCommand();
             command.CommandText = query;
 
@@ -136,13 +128,11 @@ Please provide only the T-SQL statement without explanations or formatting.";
 
     [McpServerTool, Description("List all tables in the database with basic information.")]
     public async Task<string> ListTables(
-        [Description("Optional name of the connection string to use, from MSSQL_CONNECTION_STRING_ENV_NAMES. Defaults to the first connection.")]
-        string? connectionName = null,
         CancellationToken cancellationToken = default)
     {
         try
         {
-            await using var connection = await ResolveFactory(connectionName).CreateOpenConnectionAsync(cancellationToken);
+            await using var connection = await _connectionFactory.CreateOpenConnectionAsync(cancellationToken);
 
             string query;
             if (connection is SqlConnection)
@@ -185,13 +175,11 @@ Please provide only the T-SQL statement without explanations or formatting.";
 
     [McpServerTool, Description("List all schemas (databases) available in the SQL Server instance.")]
     public async Task<string> ListSchemas(
-        [Description("Optional name of the connection string to use, from MSSQL_CONNECTION_STRING_ENV_NAMES. Defaults to the first connection.")]
-        string? connectionName = null,
         CancellationToken cancellationToken = default)
     {
         try
         {
-            await using var connection = await ResolveFactory(connectionName).CreateOpenConnectionAsync(cancellationToken);
+            await using var connection = await _connectionFactory.CreateOpenConnectionAsync(cancellationToken);
 
             string query;
             if (connection is SqlConnection)
