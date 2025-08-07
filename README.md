@@ -33,20 +33,9 @@ The server publishes each accessible database as a resource using the `mssql://`
 
 ### Environment Variables
 
-The MCP server looks for connection strings using environment variables:
+The MCP server uses a single connection string provided via the following environment variable:
 
-- **`MSSQL_CONNECTION_STRING`**: Complete SQL Server connection string used when no other configuration is provided.
-- **`MSSQL_CONNECTION_STRING_ENV_NAMES`** (optional): Comma-separated list of environment variable names containing connection strings. If provided, each listed variable must be defined. The first name in the list becomes the default connection.
-
-#### Multiple Connection Strings Example
-
-```
-MSSQL_CONNECTION_STRING_ENV_NAMES=MSSQL_CS1,MSSQL_CS2
-MSSQL_CS1="Server=localhost;Database=Db1;Trusted_Connection=true;"
-MSSQL_CS2="Server=localhost;Database=Db2;Trusted_Connection=true;"
-```
-
-If `MSSQL_CONNECTION_STRING_ENV_NAMES` is not set, the server falls back to `MSSQL_CONNECTION_STRING` as before.
+- **`MSSQL_CONNECTION_STRING`**: Complete SQL Server connection string. This variable must be set.
 
 #### Example Connection Strings
 
