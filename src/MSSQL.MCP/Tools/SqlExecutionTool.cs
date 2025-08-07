@@ -126,31 +126,61 @@ Please provide only the T-SQL statement without explanations or formatting.";
         }
     }
 
-    [McpServerTool, Description("List all tables in the database with basic information.")]
+    [McpServerTool, Description("List all tables in accessible databases with basic information.")]
     public async Task<string> ListTables(CancellationToken cancellationToken = default)
     {
         try
         {
             await using var connection = await _connectionFactory.CreateOpenConnectionAsync(cancellationToken);
 
-            string query = @"SELECT
-                    t.TABLE_SCHEMA,
-                    t.TABLE_NAME,
-                    t.TABLE_TYPE,
-                    ISNULL(p.rows, 0) as ROW_COUNT
-                FROM INFORMATION_SCHEMA.TABLES t
-                LEFT JOIN (
-                    SELECT
-                        SCHEMA_NAME(o.schema_id) as schema_name,
-                        o.name as table_name,
-                        SUM(p.rows) as rows
-                    FROM sys.objects o
-                    JOIN sys.partitions p ON o.object_id = p.object_id
-                    WHERE o.type = 'U' AND p.index_id IN (0,1)
-                    GROUP BY o.schema_id, o.name
-                ) p ON t.TABLE_SCHEMA = p.schema_name AND t.TABLE_NAME = p.table_name
-                WHERE t.TABLE_TYPE = 'BASE TABLE'
-                ORDER BY t.TABLE_SCHEMA, t.TABLE_NAME";
+            string query;
+            if (string.Equals(connection.GetType().Namespace, typeof(SqlConnection).Namespace, StringComparison.Ordinal))
+            {
+                // Get all non-system databases the user has access to
+                var databaseNames = new List<string>();
+                await using (var dbCommand = connection.CreateCommand())
+                {
+                    dbCommand.CommandText = "SELECT name FROM sys.databases WHERE database_id > 4 AND HAS_DBACCESS(name) = 1 ORDER BY name";
+                    await using var dbReader = await dbCommand.ExecuteReaderAsync(cancellationToken);
+                    while (await dbReader.ReadAsync(cancellationToken))
+                    {
+                        databaseNames.Add(dbReader.GetString(0));
+                    }
+                }
+
+                // Build a UNION ALL query across all databases with database context
+                var sb = new StringBuilder();
+                for (int i = 0; i < databaseNames.Count; i++)
+                {
+                    if (i > 0)
+                    {
+                        sb.AppendLine("UNION ALL");
+                    }
+
+                    var dbName = databaseNames[i];
+                    var escapedDbName = dbName.Replace("]", "]]", StringComparison.Ordinal);
+                    sb.Append($@"SELECT '{dbName}' AS DatabaseName,
+                                s.name AS SchemaName,
+                                t.name AS TableName,
+                                ISNULL(p.rows, 0) AS RowCount,
+                                t.type_desc AS TableType
+                            FROM [{escapedDbName}].sys.tables t
+                            JOIN [{escapedDbName}].sys.schemas s ON t.schema_id = s.schema_id
+                            LEFT JOIN (
+                                SELECT object_id, SUM(rows) AS rows
+                                FROM [{escapedDbName}].sys.partitions
+                                WHERE index_id IN (0,1)
+                                GROUP BY object_id
+                            ) p ON t.object_id = p.object_id");
+                }
+                sb.AppendLine("ORDER BY DatabaseName, SchemaName, TableName");
+                query = sb.ToString();
+            }
+            else
+            {
+                // Fallback for providers that do not support sys.databases
+                query = "SELECT 'main' AS DatabaseName, '' AS SchemaName, name AS TableName, 0 AS RowCount, '' AS TableType FROM sqlite_master WHERE type = 'table' ORDER BY name";
+            }
 
             await using var command = connection.CreateCommand();
             command.CommandText = query;
