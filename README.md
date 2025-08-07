@@ -24,6 +24,11 @@ This MCP server provides AI agents with robust, reliable access to Microsoft SQL
 | `list_tables` | List all tables with schema, name, type, and row count |
 | `list_schemas` | List all available schemas/databases in the SQL Server instance |
 
+## Resource Scheme
+
+The server publishes each accessible database as a resource using the `mssql://` URI scheme. Clients can call MCP's
+`list_resources` request to discover databases, which will appear with URIs like `mssql://MyDatabase` and a short description.
+
 ## Configuration
 
 ### Environment Variables
