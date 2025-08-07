@@ -43,7 +43,8 @@ public static class Program
         builder.Services
             .AddMcpServer()
             .WithStdioServerTransport()
-            .WithToolsFromAssembly();
+            .WithToolsFromAssembly()
+            .WithResourceProvidersFromAssembly();
 
         // Build the host
         var host = builder.Build();
