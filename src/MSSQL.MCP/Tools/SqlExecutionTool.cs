@@ -1,11 +1,11 @@
-﻿using System.ComponentModel;
-using System.Data.Common;
-using System.Text;
-using System.Text.RegularExpressions;
-using Microsoft.Data.SqlClient;
+﻿using Microsoft.Data.SqlClient;
 using Microsoft.Extensions.Logging;
 using ModelContextProtocol.Server;
 using MSSQL.MCP.Database;
+using System.ComponentModel;
+using System.Data.Common;
+using System.Text;
+using System.Text.RegularExpressions;
 
 namespace MSSQL.MCP.Tools;
 
@@ -43,8 +43,7 @@ The query parameter must contain ONLY the T-SQL statement - no explanations, mar
         [Description(@"The T-SQL query to execute. Must be valid Microsoft SQL Server T-SQL syntax only.
         Examples: 'SELECT * FROM Users', 'INSERT INTO Products VALUES (1, ''Name'')', 'CREATE TABLE Test (ID int)'
         Do NOT include explanations, markdown formatting, or non-SQL text.")]
-        string query,
-        CancellationToken cancellationToken = default)
+        string query, CancellationToken cancellationToken = default)
     {
         // Log the incoming query for debugging
         _logger.LogInformation("Received SQL execution request. Query length: {QueryLength} characters", query.Length);
@@ -128,17 +127,13 @@ Please provide only the T-SQL statement without explanations or formatting.";
     }
 
     [McpServerTool, Description("List all tables in the database with basic information.")]
-    public async Task<string> ListTables(
-        CancellationToken cancellationToken = default)
+    public async Task<string> ListTables(CancellationToken cancellationToken = default)
     {
         try
         {
             await using var connection = await _connectionFactory.CreateOpenConnectionAsync(cancellationToken);
 
-            string query;
-            if (connection is SqlConnection)
-            {
-                query = @"SELECT
+            string query = @"SELECT
                     t.TABLE_SCHEMA,
                     t.TABLE_NAME,
                     t.TABLE_TYPE,
@@ -156,11 +151,6 @@ Please provide only the T-SQL statement without explanations or formatting.";
                 ) p ON t.TABLE_SCHEMA = p.schema_name AND t.TABLE_NAME = p.table_name
                 WHERE t.TABLE_TYPE = 'BASE TABLE'
                 ORDER BY t.TABLE_SCHEMA, t.TABLE_NAME";
-            }
-            else
-            {
-                query = @"SELECT '' AS TABLE_SCHEMA, name AS TABLE_NAME, type AS TABLE_TYPE FROM sqlite_master WHERE type = 'table' ORDER BY name";
-            }
 
             await using var command = connection.CreateCommand();
             command.CommandText = query;
@@ -174,9 +164,8 @@ Please provide only the T-SQL statement without explanations or formatting.";
         }
     }
 
-    [McpServerTool, Description("List all schemas (databases) available in the SQL Server instance.")]
-    public async Task<string> ListSchemas(
-        CancellationToken cancellationToken = default)
+    [McpServerTool, Description("List all databases and schemas available to the connection.")]
+    public async Task<string> ListSchemas(CancellationToken cancellationToken = default)
     {
         try
         {
