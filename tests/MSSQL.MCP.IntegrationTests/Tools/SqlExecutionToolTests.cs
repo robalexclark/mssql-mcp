@@ -1,6 +1,9 @@
+using Microsoft.Data.SqlClient;
 using Microsoft.Extensions.Logging.Abstractions;
+using MSSQL.MCP.Database;
 using MSSQL.MCP.IntegrationTests.Infrastructure;
 using MSSQL.MCP.Tools;
+using Testcontainers.MsSql;
 using Xunit;
 
 namespace MSSQL.MCP.IntegrationTests.Tools;
@@ -210,8 +213,36 @@ public class SqlExecutionToolTests(DatabaseTestFixture fixture) : IAsyncLifetime
         Assert.Contains("main", result);
         
         // Should show column headers
+        Assert.Contains("DATABASE_NAME", result);
         Assert.Contains("SCHEMA_NAME", result);
         Assert.Contains("SCHEMA_OWNER", result);
+    }
+
+    [Fact]
+    public async Task ListSchemas_ReturnsSchemasFromMultipleSqlServerDatabases()
+    {
+        const string password = "yourStrong(!)Password";
+        await using var container = new MsSqlBuilder()
+            .WithPassword(password)
+            .Build();
+        await container.StartAsync();
+
+        var factory = new SqlConnectionFactory(container.GetConnectionString());
+        var tool = new SqlExecutionTool(factory, NullLogger<SqlExecutionTool>.Instance);
+
+        // Create two test databases
+        await using (var connection = (SqlConnection)await factory.CreateOpenConnectionAsync())
+        {
+            await using var command = connection.CreateCommand();
+            command.CommandText = "CREATE DATABASE DbOne; CREATE DATABASE DbTwo;";
+            await command.ExecuteNonQueryAsync();
+        }
+
+        var result = await tool.ListSchemas();
+
+        Assert.Contains("DATABASE_NAME", result);
+        Assert.Contains("DbOne", result);
+        Assert.Contains("DbTwo", result);
     }
 
     #endregion
