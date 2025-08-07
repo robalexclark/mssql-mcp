@@ -26,11 +26,22 @@ This MCP server provides AI agents with robust, reliable access to Microsoft SQL
 
 ## Configuration
 
-### Required Environment Variables
+### Environment Variables
 
-The MCP server requires a single environment variable:
+The MCP server looks for connection strings using environment variables:
 
-- **`MSSQL_CONNECTION_STRING`**: Complete SQL Server connection string
+- **`MSSQL_CONNECTION_STRING`**: Complete SQL Server connection string used when no other configuration is provided.
+- **`MSSQL_CONNECTION_STRING_ENV_NAMES`** (optional): Comma-separated list of environment variable names containing connection strings. If provided, each listed variable must be defined. The first name in the list becomes the default connection.
+
+#### Multiple Connection Strings Example
+
+```
+MSSQL_CONNECTION_STRING_ENV_NAMES=MSSQL_CS1,MSSQL_CS2
+MSSQL_CS1="Server=localhost;Database=Db1;Trusted_Connection=true;"
+MSSQL_CS2="Server=localhost;Database=Db2;Trusted_Connection=true;"
+```
+
+If `MSSQL_CONNECTION_STRING_ENV_NAMES` is not set, the server falls back to `MSSQL_CONNECTION_STRING` as before.
 
 #### Example Connection Strings
 

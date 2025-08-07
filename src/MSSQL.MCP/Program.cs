@@ -23,21 +23,33 @@ public static class Program
             consoleLogOptions.LogToStandardErrorThreshold = LogLevel.Trace;
         });
 
-        // Retrieve the connection string from environment variables
-        var connectionString = Environment.GetEnvironmentVariable("MSSQL_CONNECTION_STRING");
+        // Retrieve connection string environment variables
+        var connectionNamesVar = Environment.GetEnvironmentVariable("MSSQL_CONNECTION_STRING_ENV_NAMES");
+        var connectionNames = string.IsNullOrWhiteSpace(connectionNamesVar)
+            ? new[] { "MSSQL_CONNECTION_STRING" }
+            : connectionNamesVar.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
 
-        if (string.IsNullOrWhiteSpace(connectionString))
+        var connections = new List<(string Name, string ConnectionString)>();
+        foreach (var name in connectionNames)
         {
-            await Console.Error.WriteLineAsync("Error: MSSQL_CONNECTION_STRING environment variable is not set.");
-            Environment.Exit(1);
-            return;
+            var cs = Environment.GetEnvironmentVariable(name);
+            if (string.IsNullOrWhiteSpace(cs))
+            {
+                await Console.Error.WriteLineAsync($"Error: {name} environment variable is not set.");
+                Environment.Exit(1);
+                return;
+            }
+            connections.Add((name, cs));
         }
 
-        // Register IDbConnectionFactory with the connection string
-        builder.Services.AddSingleton<IDbConnectionFactory>(provider =>
+        // Register a default IDbConnectionFactory and keyed factories for each connection
+        var defaultConnection = connections[0];
+        builder.Services.AddSingleton<IDbConnectionFactory>(_ => new SqlConnectionFactory(defaultConnection.ConnectionString));
+
+        foreach (var (name, cs) in connections)
         {
-            return new SqlConnectionFactory(connectionString);
-        });
+            builder.Services.AddKeyedSingleton<IDbConnectionFactory>(name, (_, _) => new SqlConnectionFactory(cs));
+        }
 
         // Register MCP server and tools (instance-based)
         builder.Services
@@ -48,20 +60,18 @@ public static class Program
         // Build the host
         var host = builder.Build();
 
-
-        // Test the database connection before running the host
+        // Test all database connections before running the host
         try
         {
-            var dbFactory = host.Services.GetRequiredService<IDbConnectionFactory>();
-            if (await dbFactory.ValidateConnectionAsync())
+            foreach (var (name, _) in connections)
             {
-                Console.WriteLine("Database connection test succeeded.");
-            }
-            else
-            {
-                await Console.Error.WriteLineAsync("Database connection test failed: validation returned false.");
-                Environment.Exit(1);
-                return;
+                IDbConnectionFactory dbFactory = name == defaultConnection.Name
+                    ? host.Services.GetRequiredService<IDbConnectionFactory>()
+                    : host.Services.GetRequiredKeyedService<IDbConnectionFactory>(name);
+
+                using var connection = dbFactory.CreateConnection();
+                await connection.OpenAsync();
+                Console.WriteLine($"Database connection test succeeded for '{name}'.");
             }
         }
         catch (Exception dbEx)

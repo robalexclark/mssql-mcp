@@ -9,12 +9,21 @@ using MSSQL.MCP.Database;
 namespace MSSQL.MCP.Tools;
 
 [McpServerToolType]
-public class SqlExecutionTool(IDbConnectionFactory connectionFactory, ILogger<SqlExecutionTool> logger)
+public class SqlExecutionTool(IDbConnectionFactory connectionFactory, ILogger<SqlExecutionTool> logger, IServiceProvider? serviceProvider = null)
 {
+    private readonly IDbConnectionFactory _defaultConnectionFactory = connectionFactory;
+    private readonly ILogger<SqlExecutionTool> _logger = logger;
+    private readonly IServiceProvider _serviceProvider = serviceProvider ?? new ServiceCollection().BuildServiceProvider();
+
     // Regex to detect valid T-SQL keywords at the beginning of queries
     private static readonly Regex ValidTSqlStartPattern = new(
         @"^\s*(SELECT|INSERT|UPDATE|DELETE|WITH|CREATE|ALTER|DROP|GRANT|REVOKE|EXEC|EXECUTE|DECLARE|SET|USE|BACKUP|RESTORE|TRUNCATE|MERGE)\s+",
         RegexOptions.IgnoreCase | RegexOptions.Compiled);
+
+    private IDbConnectionFactory ResolveFactory(string? connectionName) =>
+        string.IsNullOrWhiteSpace(connectionName)
+            ? _defaultConnectionFactory
+            : _serviceProvider.GetRequiredKeyedService<IDbConnectionFactory>(connectionName);
 
     [McpServerTool, Description(@"Execute T-SQL queries against the connected Microsoft SQL Server database. 
     
@@ -36,19 +45,21 @@ Examples of valid T-SQL:
 
 The query parameter must contain ONLY the T-SQL statement - no explanations, markdown, or other text.")]
     public async Task<string> ExecuteSql(
-        [Description(@"The T-SQL query to execute. Must be valid Microsoft SQL Server T-SQL syntax only. 
+        [Description(@"The T-SQL query to execute. Must be valid Microsoft SQL Server T-SQL syntax only.
         Examples: 'SELECT * FROM Users', 'INSERT INTO Products VALUES (1, ''Name'')', 'CREATE TABLE Test (ID int)'
-        Do NOT include explanations, markdown formatting, or non-SQL text.")] 
+        Do NOT include explanations, markdown formatting, or non-SQL text.")]
         string query,
+        [Description("Optional name of the connection string to use, from MSSQL_CONNECTION_STRING_ENV_NAMES. Defaults to the first connection.")]
+        string? connectionName = null,
         CancellationToken cancellationToken = default)
     {
         // Log the incoming query for debugging
-        logger.LogInformation("Received SQL execution request. Query length: {QueryLength} characters", query.Length );
-        logger.LogDebug("SQL Query received: {Query}", query);
+        _logger.LogInformation("Received SQL execution request. Query length: {QueryLength} characters", query.Length );
+        _logger.LogDebug("SQL Query received: {Query}", query);
 
         if (string.IsNullOrWhiteSpace(query))
         {
-            logger.LogWarning("Empty or null query received");
+            _logger.LogWarning("Empty or null query received");
             return "Error: SQL query cannot be empty";
         }
 
@@ -56,7 +67,7 @@ The query parameter must contain ONLY the T-SQL statement - no explanations, mar
         var trimmedQuery = query.Trim();
         if (!ValidTSqlStartPattern.IsMatch(trimmedQuery))
         {
-            logger.LogWarning("Invalid T-SQL query received. Query does not start with valid T-SQL keyword: {QueryStart}", 
+            _logger.LogWarning("Invalid T-SQL query received. Query does not start with valid T-SQL keyword: {QueryStart}",
                 trimmedQuery.Length > 50 ? trimmedQuery[..50] + "..." : trimmedQuery);
             
             return @"Error: Invalid T-SQL syntax. This tool only accepts valid Microsoft SQL Server T-SQL statements.
@@ -83,10 +94,10 @@ Please provide only the T-SQL statement without explanations or formatting.";
 
         try
         {
-            logger.LogInformation("Executing T-SQL query starting with: {QueryStart}", 
+            _logger.LogInformation("Executing T-SQL query starting with: {QueryStart}",
                 trimmedQuery.Length > 30 ? trimmedQuery[..30] + "..." : trimmedQuery);
 
-            await using var connection = await connectionFactory.CreateOpenConnectionAsync(cancellationToken);
+            await using var connection = await ResolveFactory(connectionName).CreateOpenConnectionAsync(cancellationToken);
             await using var command = connection.CreateCommand();
             command.CommandText = query;
             
@@ -99,7 +110,7 @@ Please provide only the T-SQL statement without explanations or formatting.";
                 // Handle SELECT queries - return data
                 await using var reader = await command.ExecuteReaderAsync(cancellationToken);
                 var result = await FormatQueryResults(reader, cancellationToken);
-                logger.LogInformation("SELECT query executed successfully");
+                _logger.LogInformation("SELECT query executed successfully");
                 return result;
             }
             else
@@ -107,28 +118,31 @@ Please provide only the T-SQL statement without explanations or formatting.";
                 // Handle INSERT/UPDATE/DELETE/DDL - return affected rows
                 var rowsAffected = await command.ExecuteNonQueryAsync(cancellationToken);
                 var result = $"Query executed successfully. Rows affected: {rowsAffected}";
-                logger.LogInformation("Non-SELECT query executed successfully. Rows affected: {RowsAffected}", rowsAffected);
+                _logger.LogInformation("Non-SELECT query executed successfully. Rows affected: {RowsAffected}", rowsAffected);
                 return result;
             }
         }
         catch (DbException ex)
         {
-            logger.LogError(ex, "SQL execution failed with database error: {ErrorMessage}", ex.Message);
+            _logger.LogError(ex, "SQL execution failed with database error: {ErrorMessage}", ex.Message);
             return $"SQL Error: {ex.Message}";
         }
         catch (Exception ex)
         {
-            logger.LogError(ex, "SQL execution failed with general error: {ErrorMessage}", ex.Message);
+            _logger.LogError(ex, "SQL execution failed with general error: {ErrorMessage}", ex.Message);
             return $"Error: {ex.Message}";
         }
     }
 
     [McpServerTool, Description("List all tables in the database with basic information.")]
-    public async Task<string> ListTables(CancellationToken cancellationToken = default)
+    public async Task<string> ListTables(
+        [Description("Optional name of the connection string to use, from MSSQL_CONNECTION_STRING_ENV_NAMES. Defaults to the first connection.")]
+        string? connectionName = null,
+        CancellationToken cancellationToken = default)
     {
         try
         {
-            await using var connection = await connectionFactory.CreateOpenConnectionAsync(cancellationToken);
+            await using var connection = await ResolveFactory(connectionName).CreateOpenConnectionAsync(cancellationToken);
 
             string query;
             if (connection is SqlConnection)
@@ -170,11 +184,14 @@ Please provide only the T-SQL statement without explanations or formatting.";
     }
 
     [McpServerTool, Description("List all schemas (databases) available in the SQL Server instance.")]
-    public async Task<string> ListSchemas(CancellationToken cancellationToken = default)
+    public async Task<string> ListSchemas(
+        [Description("Optional name of the connection string to use, from MSSQL_CONNECTION_STRING_ENV_NAMES. Defaults to the first connection.")]
+        string? connectionName = null,
+        CancellationToken cancellationToken = default)
     {
         try
         {
-            await using var connection = await connectionFactory.CreateOpenConnectionAsync(cancellationToken);
+            await using var connection = await ResolveFactory(connectionName).CreateOpenConnectionAsync(cancellationToken);
 
             string query;
             if (connection is SqlConnection)
@@ -201,6 +218,35 @@ Please provide only the T-SQL statement without explanations or formatting.";
         catch (Exception ex)
         {
             return $"Error listing schemas: {ex.Message}";
+        }
+    }
+
+    [McpServerTool, Description("List all databases available on the server.")]
+    public async Task<string> ListDatabases(CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            await using var connection = await connectionFactory.CreateOpenConnectionAsync(cancellationToken);
+
+            string query;
+            if (connection is SqlConnection)
+            {
+                query = @"SELECT name, owner_sid, state_desc FROM sys.databases ORDER BY name";
+            }
+            else
+            {
+                query = @"SELECT name, NULL AS owner_sid, NULL AS state_desc FROM pragma_database_list ORDER BY name";
+            }
+
+            await using var command = connection.CreateCommand();
+            command.CommandText = query;
+            await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+
+            return await FormatQueryResults(reader, cancellationToken);
+        }
+        catch (Exception ex)
+        {
+            return $"Error listing databases: {ex.Message}";
         }
     }
 

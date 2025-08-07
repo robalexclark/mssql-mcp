@@ -224,7 +224,7 @@ public class SqlExecutionToolTests(DatabaseTestFixture fixture) : IAsyncLifetime
         using var cts = new CancellationTokenSource();
         
         // Start a query
-        var task = _tool.ExecuteSql("SELECT 1", cts.Token);
+        var task = _tool.ExecuteSql("SELECT 1", cancellationToken: cts.Token);
         
         // Cancel immediately
         await cts.CancelAsync();
@@ -241,7 +241,7 @@ public class SqlExecutionToolTests(DatabaseTestFixture fixture) : IAsyncLifetime
         await cts.CancelAsync();
         
         // Should handle cancellation gracefully
-        var result = await _tool.ListTables(cts.Token);
+        var result = await _tool.ListTables(cancellationToken: cts.Token);
         Assert.NotNull(result);
     }
 
