@@ -61,24 +61,30 @@ public static class Program
         var host = builder.Build();
 
         // Test all database connections before running the host
-        try
+        foreach (var (name, _) in connections)
         {
-            foreach (var (name, _) in connections)
-            {
-                IDbConnectionFactory dbFactory = name == defaultConnection.Name
-                    ? host.Services.GetRequiredService<IDbConnectionFactory>()
-                    : host.Services.GetRequiredKeyedService<IDbConnectionFactory>(name);
+            IDbConnectionFactory dbFactory = name == defaultConnection.Name
+                ? host.Services.GetRequiredService<IDbConnectionFactory>()
+                : host.Services.GetRequiredKeyedService<IDbConnectionFactory>(name);
 
-                using var connection = dbFactory.CreateConnection();
-                await connection.OpenAsync();
+            try
+            {
+                var isValid = await dbFactory.ValidateConnectionAsync();
+                if (!isValid)
+                {
+                    await Console.Error.WriteLineAsync($"Database connection test failed for '{name}'.");
+                    Environment.Exit(1);
+                    return;
+                }
+
                 Console.WriteLine($"Database connection test succeeded for '{name}'.");
             }
-        }
-        catch (Exception dbEx)
-        {
-            await Console.Error.WriteLineAsync($"Database connection test failed: {dbEx.Message}");
-            Environment.Exit(1);
-            return;
+            catch (Exception dbEx)
+            {
+                await Console.Error.WriteLineAsync($"Database connection test failed for '{name}': {dbEx.Message}");
+                Environment.Exit(1);
+                return;
+            }
         }
 
 
