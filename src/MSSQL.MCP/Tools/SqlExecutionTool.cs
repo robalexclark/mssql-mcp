@@ -194,66 +194,6 @@ Please provide only the T-SQL statement without explanations or formatting.";
         }
     }
 
-    [McpServerTool, Description("List all databases and schemas available to the connection.")]
-    public async Task<string> ListSchemas(CancellationToken cancellationToken = default)
-    {
-        try
-        {
-            await using var connection = await _connectionFactory.CreateOpenConnectionAsync(cancellationToken);
-
-            string query;
-            if (string.Equals(connection.GetType().Namespace, typeof(SqlConnection).Namespace, StringComparison.Ordinal))
-            {
-                // Get all databases the user has access to
-                var databaseNames = new List<string>();
-                await using (var dbCommand = connection.CreateCommand())
-                {
-                    dbCommand.CommandText = "SELECT name FROM sys.databases WHERE HAS_DBACCESS(name) = 1 ORDER BY name";
-                    await using var dbReader = await dbCommand.ExecuteReaderAsync(cancellationToken);
-                    while (await dbReader.ReadAsync(cancellationToken))
-                    {
-                        databaseNames.Add(dbReader.GetString(0));
-                    }
-                }
-
-                // Build a UNION ALL query across all databases with database context
-                var sb = new StringBuilder();
-                for (int i = 0; i < databaseNames.Count; i++)
-                {
-                    if (i > 0)
-                    {
-                        sb.AppendLine("UNION ALL");
-                    }
-
-                    var dbName = databaseNames[i].Replace("]", "]]", StringComparison.Ordinal);
-                    sb.Append($@"SELECT '{databaseNames[i]}' AS DATABASE_NAME,
-                                SCHEMA_NAME,
-                                SCHEMA_OWNER,
-                                DEFAULT_CHARACTER_SET_CATALOG,
-                                DEFAULT_CHARACTER_SET_SCHEMA,
-                                DEFAULT_CHARACTER_SET_NAME
-                             FROM [{dbName}].INFORMATION_SCHEMA.SCHEMATA");
-                }
-                sb.AppendLine(" ORDER BY DATABASE_NAME, SCHEMA_NAME");
-                query = sb.ToString();
-            }
-            else
-            {
-                query = "SELECT 'main' AS DATABASE_NAME, 'main' AS SCHEMA_NAME, '' AS SCHEMA_OWNER";
-            }
-
-            await using var command = connection.CreateCommand();
-            command.CommandText = query;
-            await using var reader = await command.ExecuteReaderAsync(cancellationToken);
-
-            return await FormatQueryResults(reader, cancellationToken);
-        }
-        catch (Exception ex)
-        {
-            return $"Error listing schemas: {ex.Message}";
-        }
-    }
-
     private static async Task<string> FormatQueryResults(DbDataReader reader, CancellationToken cancellationToken)
     {
         var result = new System.Text.StringBuilder();
