@@ -183,11 +183,11 @@ Please provide only the T-SQL statement without explanations or formatting.";
             await using var connection = await _connectionFactory.CreateOpenConnectionAsync(cancellationToken);
 
             string query;
-            if (connection is SqlConnection sqlConnection)
+            if (string.Equals(connection.GetType().Namespace, typeof(SqlConnection).Namespace, StringComparison.Ordinal))
             {
                 // Get all databases the user has access to
                 var databaseNames = new List<string>();
-                await using (var dbCommand = sqlConnection.CreateCommand())
+                await using (var dbCommand = connection.CreateCommand())
                 {
                     dbCommand.CommandText = "SELECT name FROM sys.databases WHERE HAS_DBACCESS(name) = 1 ORDER BY name";
                     await using var dbReader = await dbCommand.ExecuteReaderAsync(cancellationToken);

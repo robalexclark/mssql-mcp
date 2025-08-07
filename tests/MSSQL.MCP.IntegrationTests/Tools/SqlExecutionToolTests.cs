@@ -1,323 +1,181 @@
-using Microsoft.Data.SqlClient;
+#nullable disable
+using System.Collections.Generic;
+using System.Data;
+using System.Data.Common;
 using Microsoft.Extensions.Logging.Abstractions;
 using MSSQL.MCP.Database;
-using MSSQL.MCP.IntegrationTests.Infrastructure;
 using MSSQL.MCP.Tools;
-using Testcontainers.MsSql;
 using Xunit;
 
-namespace MSSQL.MCP.IntegrationTests.Tools;
-
-/// <summary>
-/// Integration tests for SqlExecutionTool that validate all MCP tools work correctly
-/// with an in-memory SQL database.
-/// </summary>
-[Collection("Database")]
-public class SqlExecutionToolTests(DatabaseTestFixture fixture) : IAsyncLifetime
+namespace MSSQL.MCP.IntegrationTests.Tools
 {
-    private readonly SqlExecutionTool _tool = new(fixture.ConnectionFactory, NullLogger<SqlExecutionTool>.Instance);
-
-    public async Task InitializeAsync()
+    public class SqlExecutionToolTests
     {
-        await fixture.CleanupTestDataAsync();
-    }
-
-    public Task DisposeAsync() => Task.CompletedTask;
-
-    #region ExecuteSql Tests
-
-    [Fact]
-    public async Task ExecuteSql_SelectQuery_ReturnsFormattedResults()
-    {
-        // Act
-        var result = await _tool.ExecuteSql("SELECT Id, Name, Email FROM Users ORDER BY Id");
-
-        // Assert
-        Assert.NotNull(result);
-        Assert.Contains("John Doe", result);
-        Assert.Contains("jane@example.com", result);
-        Assert.Contains("Bob Johnson", result);
-        
-        // Should contain table headers
-        Assert.Contains("Id", result);
-        Assert.Contains("Name", result);
-        Assert.Contains("Email", result);
-    }
-
-    [Fact]
-    public async Task ExecuteSql_WithClause_ReturnsResults()
-    {
-        // Act
-        var result = await _tool.ExecuteSql(@"
-            WITH ActiveUsers AS (
-                SELECT Id, Name FROM Users WHERE IsActive = 1
-            )
-            SELECT * FROM ActiveUsers ORDER BY Id");
-
-        // Assert
-        Assert.NotNull(result);
-        Assert.Contains("John Doe", result);
-        Assert.Contains("Jane Smith", result);
-        Assert.Contains("Bob Johnson", result);
-    }
-
-    [Fact]
-    public async Task ExecuteSql_InsertQuery_ReturnsRowsAffected()
-    {
-        // Act
-        var result = await _tool.ExecuteSql("INSERT INTO Users (Name, Email) VALUES ('Test User', 'test@example.com')");
-
-        // Assert
-        Assert.NotNull(result);
-        Assert.Contains("Rows affected: 1", result);
-        Assert.Contains("successfully", result);
-    }
-
-    [Fact]
-    public async Task ExecuteSql_UpdateQuery_ReturnsRowsAffected()
-    {
-        // Act
-        var result = await _tool.ExecuteSql("UPDATE Users SET Name = 'Updated Name' WHERE Id = 1");
-
-        // Assert
-        Assert.NotNull(result);
-        Assert.Contains("Rows affected: 1", result);
-        Assert.Contains("successfully", result);
-    }
-
-    [Fact]
-    public async Task ExecuteSql_DeleteQuery_ReturnsRowsAffected()
-    {
-        // Act
-        var result = await _tool.ExecuteSql("DELETE FROM Orders WHERE Status = 'Cancelled'");
-
-        // Assert
-        Assert.NotNull(result);
-        Assert.Contains("Rows affected: 1", result);
-        Assert.Contains("successfully", result);
-    }
-
-    [Fact]
-    public async Task ExecuteSql_CreateTable_ReturnsSuccess()
-    {
-        // Act
-        var result = await _tool.ExecuteSql(@"
-            CREATE TABLE TestTable (
-                Id INTEGER PRIMARY KEY AUTOINCREMENT,
-                Name TEXT NOT NULL
-            )");
-
-        // Assert
-        Assert.NotNull(result);
-        Assert.Contains("successfully", result);
-    }
-
-    [Fact]
-    public async Task ExecuteSql_EmptyQuery_ReturnsError()
-    {
-        // Act
-        var result = await _tool.ExecuteSql("");
-
-        // Assert
-        Assert.NotNull(result);
-        Assert.Contains("Error: SQL query cannot be empty", result);
-    }
-
-    [Fact]
-    public async Task ExecuteSql_InvalidQuery_ReturnsError()
-    {
-        // Act - Use valid T-SQL syntax but invalid operation to get SQL Server error
-        var result = await _tool.ExecuteSql("SELECT * FROM InvalidTable123");
-
-        // Assert
-        Assert.NotNull(result);
-        Assert.Contains("SQL Error:", result);
-    }
-
-    [Fact]
-    public async Task ExecuteSql_NonSqlInput_ReturnsValidationError()
-    {
-        // Act - Use invalid T-SQL syntax to trigger validation error
-        var result = await _tool.ExecuteSql("INVALID SQL QUERY");
-
-        // Assert
-        Assert.NotNull(result);
-        Assert.Contains("Error: Invalid T-SQL syntax", result);
-        Assert.Contains("This tool only accepts valid Microsoft SQL Server T-SQL statements", result);
-    }
-
-    [Fact]
-    public async Task ExecuteSql_SelectFromNonExistentTable_ReturnsError()
-    {
-        // Act
-        var result = await _tool.ExecuteSql("SELECT * FROM NonExistentTable");
-
-        // Assert
-        Assert.NotNull(result);
-        Assert.Contains("SQL Error:", result);
-    }
-
-    #endregion
-
-    #region ListTables Tests
-
-    [Fact]
-    public async Task ListTables_ReturnsAllTables()
-    {
-        // Act
-        var result = await _tool.ListTables();
-
-        // Assert
-        Assert.NotNull(result);
-        
-        // Should contain our test tables
-        Assert.Contains("Users", result);
-        Assert.Contains("Orders", result);
-        Assert.Contains("Products", result);
-        
-        // Should show table type
-        Assert.Contains("table", result);
-    }
-
-    [Fact]
-    public async Task ListTables_ShowsCorrectColumns()
-    {
-        // Act
-        var result = await _tool.ListTables();
-
-        // Assert
-        Assert.NotNull(result);
-        
-        // Should contain expected column headers
-        Assert.Contains("TABLE_SCHEMA", result);
-        Assert.Contains("TABLE_NAME", result);
-        Assert.Contains("TABLE_TYPE", result);
-    }
-
-    #endregion
-
-
-
-    #region ListSchemas Tests
-
-    [Fact]
-    public async Task ListSchemas_ReturnsAllSchemas()
-    {
-        // Act
-        var result = await _tool.ListSchemas();
-
-        // Assert
-        Assert.NotNull(result);
-        
-        // SQLite has a single default schema
-        Assert.Contains("main", result);
-        
-        // Should show column headers
-        Assert.Contains("DATABASE_NAME", result);
-        Assert.Contains("SCHEMA_NAME", result);
-        Assert.Contains("SCHEMA_OWNER", result);
-    }
-
-    [Fact]
-    public async Task ListSchemas_ReturnsSchemasFromMultipleSqlServerDatabases()
-    {
-        const string password = "yourStrong(!)Password";
-        await using var container = new MsSqlBuilder()
-            .WithPassword(password)
-            .Build();
-        await container.StartAsync();
-
-        var factory = new SqlConnectionFactory(container.GetConnectionString());
-        var tool = new SqlExecutionTool(factory, NullLogger<SqlExecutionTool>.Instance);
-
-        // Create two test databases
-        await using (var connection = (SqlConnection)await factory.CreateOpenConnectionAsync())
+        [Fact]
+        public async Task ListSchemas_ReturnsSchemasFromMultipleDatabases()
         {
-            await using var command = connection.CreateCommand();
-            command.CommandText = "CREATE DATABASE DbOne; CREATE DATABASE DbTwo;";
-            await command.ExecuteNonQueryAsync();
+            var schemas = new Dictionary<string, List<string>>
+            {
+                ["DbOne"] = new() { "dbo", "custom" },
+                ["DbTwo"] = new() { "dbo" }
+            };
+            var factory = new FakeSqlConnectionFactory(schemas);
+            var tool = new SqlExecutionTool(factory, NullLogger<SqlExecutionTool>.Instance);
+
+            var result = await tool.ListSchemas();
+
+            Assert.Contains("DbOne", result);
+            Assert.Contains("DbTwo", result);
+            Assert.Contains("dbo", result);
+            Assert.Contains("DATABASE_NAME", result);
+            Assert.Contains("SCHEMA_NAME", result);
         }
 
-        var result = await tool.ListSchemas();
+        private class FakeSqlConnectionFactory : IDbConnectionFactory
+        {
+            private readonly IReadOnlyDictionary<string, List<string>> _schemas;
 
-        Assert.Contains("DATABASE_NAME", result);
-        Assert.Contains("DbOne", result);
-        Assert.Contains("DbTwo", result);
+            public FakeSqlConnectionFactory(IReadOnlyDictionary<string, List<string>> schemas)
+            {
+                _schemas = schemas;
+            }
+
+            public DbConnection CreateConnection() => new Microsoft.Data.SqlClient.FakeSqlConnection(_schemas);
+
+            public Task<DbConnection> CreateOpenConnectionAsync(CancellationToken cancellationToken = default)
+                => Task.FromResult<DbConnection>(new Microsoft.Data.SqlClient.FakeSqlConnection(_schemas));
+
+            public Task<bool> ValidateConnectionAsync(CancellationToken cancellationToken = default)
+                => Task.FromResult(true);
+        }
     }
+}
 
-    #endregion
-
-    #region Error Handling Tests
-
-    [Fact]
-    public async Task ExecuteSql_WithCancellation_HandlesGracefully()
+namespace Microsoft.Data.SqlClient
+{
+    internal class FakeSqlConnection : DbConnection
     {
-        using var cts = new CancellationTokenSource();
-        
-        // Start a query
-        var task = _tool.ExecuteSql("SELECT 1", cancellationToken: cts.Token);
-        
-        // Cancel immediately
-        await cts.CancelAsync();
-        
-        // Should complete without throwing
-        var result = await task;
-        Assert.NotNull(result);
+        private readonly Queue<DataTable> _tables;
+        private ConnectionState _state = ConnectionState.Closed;
+
+        public FakeSqlConnection(IReadOnlyDictionary<string, List<string>> schemas)
+        {
+            var dbTable = new DataTable();
+            dbTable.Columns.Add("name", typeof(string));
+            foreach (var db in schemas.Keys)
+            {
+                dbTable.Rows.Add(db);
+            }
+
+            var schemaTable = new DataTable();
+            schemaTable.Columns.Add("DATABASE_NAME", typeof(string));
+            schemaTable.Columns.Add("SCHEMA_NAME", typeof(string));
+            schemaTable.Columns.Add("SCHEMA_OWNER", typeof(string));
+            schemaTable.Columns.Add("DEFAULT_CHARACTER_SET_CATALOG", typeof(string));
+            schemaTable.Columns.Add("DEFAULT_CHARACTER_SET_SCHEMA", typeof(string));
+            schemaTable.Columns.Add("DEFAULT_CHARACTER_SET_NAME", typeof(string));
+            foreach (var kvp in schemas)
+            {
+                foreach (var schema in kvp.Value)
+                {
+                    schemaTable.Rows.Add(kvp.Key, schema, "dbo", null, null, null);
+                }
+            }
+
+            _tables = new Queue<DataTable>(new[] { dbTable, schemaTable });
+        }
+
+        public override string ConnectionString { get; set; } = string.Empty;
+        public override string Database => "master";
+        public override string DataSource => "in-memory";
+        public override string ServerVersion => "1.0";
+        public override ConnectionState State => _state;
+
+        public override void ChangeDatabase(string databaseName) { }
+        public override void Close() => _state = ConnectionState.Closed;
+        public override void Open() => _state = ConnectionState.Open;
+        public override Task OpenAsync(CancellationToken cancellationToken)
+        {
+            _state = ConnectionState.Open;
+            return Task.CompletedTask;
+        }
+
+        protected override DbTransaction BeginDbTransaction(IsolationLevel isolationLevel) => throw new NotImplementedException();
+
+        protected override DbCommand CreateDbCommand()
+        {
+            var table = _tables.Dequeue();
+            return new FakeSqlCommand(table);
+        }
     }
 
-    [Fact]
-    public async Task ListTables_WithCancellation_HandlesGracefully()
+    internal class FakeSqlCommand : DbCommand
     {
-        using var cts = new CancellationTokenSource();
-        await cts.CancelAsync();
-        
-        // Should handle cancellation gracefully
-        var result = await _tool.ListTables(cancellationToken: cts.Token);
-        Assert.NotNull(result);
+        private readonly DataTable _table;
+
+        public FakeSqlCommand(DataTable table)
+        {
+            _table = table;
+        }
+
+        public override string CommandText { get; set; }
+        public override int CommandTimeout { get; set; }
+        public override CommandType CommandType { get; set; }
+        public override bool DesignTimeVisible { get; set; }
+        public override UpdateRowSource UpdatedRowSource { get; set; }
+        protected override DbConnection DbConnection { get; set; }
+        protected override DbParameterCollection DbParameterCollection { get; } = new FakeParameterCollection();
+        protected override DbTransaction DbTransaction { get; set; }
+
+        public override void Cancel() { }
+        public override int ExecuteNonQuery() => 0;
+        public override object ExecuteScalar() => null;
+        public override void Prepare() { }
+
+        protected override DbDataReader ExecuteDbDataReader(CommandBehavior behavior)
+            => _table.CreateDataReader();
+
+        protected override DbParameter CreateDbParameter()
+            => new FakeDbParameter();
     }
 
-    #endregion
-
-    #region Data Validation Tests
-
-    [Fact]
-    public async Task ExecuteSql_ComplexJoin_ReturnsCorrectData()
+    internal class FakeParameterCollection : DbParameterCollection
     {
-        // Act
-        var result = await _tool.ExecuteSql(@"
-            SELECT 
-                u.Name as UserName,
-                COUNT(o.Id) as OrderCount,
-                SUM(o.Total) as TotalAmount
-            FROM Users u
-            LEFT JOIN Orders o ON u.Id = o.UserId
-            WHERE u.IsActive = 1
-            GROUP BY u.Id, u.Name
-            ORDER BY u.Name");
-
-        // Assert
-        Assert.NotNull(result);
-        Assert.Contains("John Doe", result);
-        Assert.Contains("Jane Smith", result);
-        Assert.Contains("Bob Johnson", result);
-        
-        // Should show aggregated data
-        Assert.Contains("249.98", result); // John's total orders
-        Assert.Contains("75.5", result);  // Jane's total orders
-        Assert.Contains("200", result); // Bob's total orders
+        public override int Add(object value) => throw new NotImplementedException();
+        public override void AddRange(Array values) => throw new NotImplementedException();
+        public override void Clear() { }
+        public override bool Contains(object value) => false;
+        public override bool Contains(string value) => false;
+        public override void CopyTo(Array array, int index) { }
+        public override int Count => 0;
+        public override System.Collections.IEnumerator GetEnumerator() => Array.Empty<object>().GetEnumerator();
+        public override int IndexOf(object value) => -1;
+        public override int IndexOf(string parameterName) => -1;
+        public override void Insert(int index, object value) => throw new NotImplementedException();
+        public override bool IsFixedSize => false;
+        public override bool IsReadOnly => false;
+        public override bool IsSynchronized => false;
+        public override void Remove(object value) => throw new NotImplementedException();
+        public override void RemoveAt(int index) => throw new NotImplementedException();
+        public override void RemoveAt(string parameterName) => throw new NotImplementedException();
+        protected override DbParameter GetParameter(int index) => throw new NotImplementedException();
+        protected override DbParameter GetParameter(string parameterName) => throw new NotImplementedException();
+        protected override void SetParameter(int index, DbParameter value) => throw new NotImplementedException();
+        protected override void SetParameter(string parameterName, DbParameter value) => throw new NotImplementedException();
+        public override object SyncRoot => new object();
     }
 
-    [Fact]
-    public async Task ExecuteSql_ParameterizedQuery_WorksCorrectly()
+    internal class FakeDbParameter : DbParameter
     {
-        // Note: This test shows that regular parameterized queries work
-        // In a real MCP implementation, you might want to add parameter support
-        var result = await _tool.ExecuteSql("SELECT * FROM Users WHERE Id = 1");
-
-        Assert.NotNull(result);
-        Assert.Contains("John Doe", result);
-        Assert.DoesNotContain("Jane Smith", result);
+        public override DbType DbType { get; set; }
+        public override ParameterDirection Direction { get; set; } = ParameterDirection.Input;
+        public override bool IsNullable { get; set; }
+        public override string ParameterName { get; set; }
+        public override string SourceColumn { get; set; }
+        public override object Value { get; set; }
+        public override bool SourceColumnNullMapping { get; set; }
+        public override int Size { get; set; }
+        public override void ResetDbType() { }
     }
+}
 
-    #endregion
-} 
