@@ -204,6 +204,35 @@ Please provide only the T-SQL statement without explanations or formatting.";
         }
     }
 
+    [McpServerTool, Description("List all databases available on the server.")]
+    public async Task<string> ListDatabases(CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            await using var connection = await connectionFactory.CreateOpenConnectionAsync(cancellationToken);
+
+            string query;
+            if (connection is SqlConnection)
+            {
+                query = @"SELECT name, owner_sid, state_desc FROM sys.databases ORDER BY name";
+            }
+            else
+            {
+                query = @"SELECT name, NULL AS owner_sid, NULL AS state_desc FROM pragma_database_list ORDER BY name";
+            }
+
+            await using var command = connection.CreateCommand();
+            command.CommandText = query;
+            await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+
+            return await FormatQueryResults(reader, cancellationToken);
+        }
+        catch (Exception ex)
+        {
+            return $"Error listing databases: {ex.Message}";
+        }
+    }
+
     private static async Task<string> FormatQueryResults(DbDataReader reader, CancellationToken cancellationToken)
     {
         var result = new System.Text.StringBuilder();
