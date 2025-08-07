@@ -12,38 +12,39 @@ namespace MSSQL.MCP.IntegrationTests.Tools
     public class SqlExecutionToolTests
     {
         [Fact]
-        public async Task ListSchemas_ReturnsSchemasFromMultipleDatabases()
+        public async Task ListTables_ReturnsTablesFromMultipleDatabases()
         {
-            var schemas = new Dictionary<string, List<string>>
+            var tables = new Dictionary<string, List<(string Schema, string Table)>>
             {
-                ["DbOne"] = new() { "dbo", "custom" },
-                ["DbTwo"] = new() { "dbo" }
+                ["DbOne"] = new() { ("dbo", "Users"), ("custom", "Logs") },
+                ["DbTwo"] = new() { ("dbo", "Orders") }
             };
-            var factory = new FakeSqlConnectionFactory(schemas);
+            var factory = new FakeSqlConnectionFactory(tables);
             var tool = new SqlExecutionTool(factory, NullLogger<SqlExecutionTool>.Instance);
 
-            var result = await tool.ListSchemas();
+            var result = await tool.ListTables();
 
             Assert.Contains("DbOne", result);
             Assert.Contains("DbTwo", result);
-            Assert.Contains("dbo", result);
-            Assert.Contains("DATABASE_NAME", result);
-            Assert.Contains("SCHEMA_NAME", result);
+            Assert.Contains("Users", result);
+            Assert.Contains("Orders", result);
+            Assert.Contains("DatabaseName", result);
+            Assert.Contains("TableName", result);
         }
 
         private class FakeSqlConnectionFactory : IDbConnectionFactory
         {
-            private readonly IReadOnlyDictionary<string, List<string>> _schemas;
+            private readonly IReadOnlyDictionary<string, List<(string Schema, string Table)>> _tables;
 
-            public FakeSqlConnectionFactory(IReadOnlyDictionary<string, List<string>> schemas)
+            public FakeSqlConnectionFactory(IReadOnlyDictionary<string, List<(string Schema, string Table)>> tables)
             {
-                _schemas = schemas;
+                _tables = tables;
             }
 
-            public DbConnection CreateConnection() => new Microsoft.Data.SqlClient.FakeSqlConnection(_schemas);
+            public DbConnection CreateConnection() => new Microsoft.Data.SqlClient.FakeSqlConnection(_tables);
 
             public Task<DbConnection> CreateOpenConnectionAsync(CancellationToken cancellationToken = default)
-                => Task.FromResult<DbConnection>(new Microsoft.Data.SqlClient.FakeSqlConnection(_schemas));
+                => Task.FromResult<DbConnection>(new Microsoft.Data.SqlClient.FakeSqlConnection(_tables));
 
             public Task<bool> ValidateConnectionAsync(CancellationToken cancellationToken = default)
                 => Task.FromResult(true);
@@ -58,31 +59,30 @@ namespace Microsoft.Data.SqlClient
         private readonly Queue<DataTable> _tables;
         private ConnectionState _state = ConnectionState.Closed;
 
-        public FakeSqlConnection(IReadOnlyDictionary<string, List<string>> schemas)
+        public FakeSqlConnection(IReadOnlyDictionary<string, List<(string Schema, string Table)>> tables)
         {
             var dbTable = new DataTable();
             dbTable.Columns.Add("name", typeof(string));
-            foreach (var db in schemas.Keys)
+            foreach (var db in tables.Keys)
             {
                 dbTable.Rows.Add(db);
             }
 
-            var schemaTable = new DataTable();
-            schemaTable.Columns.Add("DATABASE_NAME", typeof(string));
-            schemaTable.Columns.Add("SCHEMA_NAME", typeof(string));
-            schemaTable.Columns.Add("SCHEMA_OWNER", typeof(string));
-            schemaTable.Columns.Add("DEFAULT_CHARACTER_SET_CATALOG", typeof(string));
-            schemaTable.Columns.Add("DEFAULT_CHARACTER_SET_SCHEMA", typeof(string));
-            schemaTable.Columns.Add("DEFAULT_CHARACTER_SET_NAME", typeof(string));
-            foreach (var kvp in schemas)
+            var tableTable = new DataTable();
+            tableTable.Columns.Add("DatabaseName", typeof(string));
+            tableTable.Columns.Add("SchemaName", typeof(string));
+            tableTable.Columns.Add("TableName", typeof(string));
+            tableTable.Columns.Add("RowCount", typeof(int));
+            tableTable.Columns.Add("TableType", typeof(string));
+            foreach (var kvp in tables)
             {
-                foreach (var schema in kvp.Value)
+                foreach (var (schema, table) in kvp.Value)
                 {
-                    schemaTable.Rows.Add(kvp.Key, schema, "dbo", null, null, null);
+                    tableTable.Rows.Add(kvp.Key, schema, table, 0, "BASE TABLE");
                 }
             }
 
-            _tables = new Queue<DataTable>(new[] { dbTable, schemaTable });
+            _tables = new Queue<DataTable>(new[] { dbTable, tableTable });
         }
 
         public override string ConnectionString { get; set; } = string.Empty;

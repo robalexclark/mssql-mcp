@@ -22,9 +22,6 @@ This MCP server provides AI agents with robust, reliable access to Microsoft SQL
 |------|-------------|
 | `execute_sql` | Execute any SQL query against the database |
 | `list_tables` | List all tables with schema, name, type, and row count |
-| `list_schemas` | List schemas for every accessible database, returning a `DATABASE_NAME` column alongside schema details |
-
-The `list_schemas` tool aggregates schemas from each database the connection can access, providing both database and schema context in its output.
 
 ## Resource Scheme
 
