@@ -53,9 +53,16 @@ public static class Program
         try
         {
             var dbFactory = host.Services.GetRequiredService<IDbConnectionFactory>();
-            using var connection = dbFactory.CreateConnection();
-            await connection.OpenAsync();
-            Console.WriteLine("Database connection test succeeded.");
+            if (await dbFactory.ValidateConnectionAsync())
+            {
+                Console.WriteLine("Database connection test succeeded.");
+            }
+            else
+            {
+                await Console.Error.WriteLineAsync("Database connection test failed: validation returned false.");
+                Environment.Exit(1);
+                return;
+            }
         }
         catch (Exception dbEx)
         {
