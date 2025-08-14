@@ -1,11 +1,15 @@
-﻿using Microsoft.Data.SqlClient;
-using Microsoft.Extensions.Logging;
+﻿using Microsoft.Extensions.Logging;
 using ModelContextProtocol.Server;
 using MSSQL.MCP.Database;
+using System;
+using System.Collections.Generic;
 using System.ComponentModel;
 using System.Data.Common;
+using System.Linq;
 using System.Text;
 using System.Text.RegularExpressions;
+using System.Threading;
+using System.Threading.Tasks;
 
 namespace MSSQL.MCP.Tools;
 
@@ -126,43 +130,40 @@ Please provide only the T-SQL statement without explanations or formatting.";
         }
     }
 
-    [McpServerTool, Description("List all tables in accessible databases with basic information.")]
+    [McpServerTool, Description("List all tables in all accessible databases with basic information.")]
     public async Task<string> ListTables(CancellationToken cancellationToken = default)
     {
         try
         {
             await using var connection = await _connectionFactory.CreateOpenConnectionAsync(cancellationToken);
 
-            string query;
-            if (string.Equals(connection.GetType().Namespace, typeof(SqlConnection).Namespace, StringComparison.Ordinal))
+            // Get all non-system databases the user has access to
+            var databaseNames = new List<string>();
+            await using (var dbCommand = connection.CreateCommand())
             {
-                // Get all non-system databases the user has access to
-                var databaseNames = new List<string>();
-                await using (var dbCommand = connection.CreateCommand())
+                dbCommand.CommandText = "SELECT name FROM sys.databases WHERE database_id > 4 AND HAS_DBACCESS(name) = 1 AND name!= 'PURPRArcadian' AND name!= 'Hangfire' ORDER BY name";
+                await using var dbReader = await dbCommand.ExecuteReaderAsync(cancellationToken);
+                while (await dbReader.ReadAsync(cancellationToken))
                 {
-                    dbCommand.CommandText = "SELECT name FROM sys.databases WHERE database_id > 4 AND HAS_DBACCESS(name) = 1 ORDER BY name";
-                    await using var dbReader = await dbCommand.ExecuteReaderAsync(cancellationToken);
-                    while (await dbReader.ReadAsync(cancellationToken))
-                    {
-                        databaseNames.Add(dbReader.GetString(0));
-                    }
+                    databaseNames.Add(dbReader.GetString(0));
+                }
+            }
+
+            // Build a UNION ALL query across all databases with database context
+            var sb = new StringBuilder();
+            for (int i = 0; i < databaseNames.Count; i++)
+            {
+                if (i > 0)
+                {
+                    sb.AppendLine(" UNION ALL ");
                 }
 
-                // Build a UNION ALL query across all databases with database context
-                var sb = new StringBuilder();
-                for (int i = 0; i < databaseNames.Count; i++)
-                {
-                    if (i > 0)
-                    {
-                        sb.AppendLine("UNION ALL");
-                    }
-
-                    var dbName = databaseNames[i];
-                    var escapedDbName = dbName.Replace("]", "]]", StringComparison.Ordinal);
-                    sb.Append($@"SELECT '{dbName}' AS DatabaseName,
+                var dbName = databaseNames[i];
+                var escapedDbName = dbName.Replace("]", "]]", StringComparison.Ordinal);
+                sb.Append($@"SELECT '{dbName}' AS DatabaseName,
                                 s.name AS SchemaName,
                                 t.name AS TableName,
-                                ISNULL(p.rows, 0) AS RowCount,
+                                ISNULL(p.rows, 0) AS 'RowCount',
                                 t.type_desc AS TableType
                             FROM [{escapedDbName}].sys.tables t
                             JOIN [{escapedDbName}].sys.schemas s ON t.schema_id = s.schema_id
@@ -172,18 +173,11 @@ Please provide only the T-SQL statement without explanations or formatting.";
                                 WHERE index_id IN (0,1)
                                 GROUP BY object_id
                             ) p ON t.object_id = p.object_id");
-                }
-                sb.AppendLine("ORDER BY DatabaseName, SchemaName, TableName");
-                query = sb.ToString();
             }
-            else
-            {
-                // Fallback for providers that do not support sys.databases
-                query = "SELECT 'main' AS DatabaseName, '' AS SchemaName, name AS TableName, 0 AS RowCount, '' AS TableType FROM sqlite_master WHERE type = 'table' ORDER BY name";
-            }
+            sb.AppendLine(" ORDER BY DatabaseName, SchemaName, TableName");
 
             await using var command = connection.CreateCommand();
-            command.CommandText = query;
+            command.CommandText = sb.ToString();
             await using var reader = await command.ExecuteReaderAsync(cancellationToken);
 
             return await FormatQueryResults(reader, cancellationToken);
@@ -206,11 +200,21 @@ Please provide only the T-SQL statement without explanations or formatting.";
         // Get column headers
         var columnCount = reader.FieldCount;
         var columnNames = new string[columnCount];
+        var columnTypeNames = new string[columnCount];
         var columnWidths = new int[columnCount];
 
         for (int i = 0; i < columnCount; i++)
         {
             columnNames[i] = reader.GetName(i);
+            // Provider-specific type name (e.g., geography, geometry, hierarchyid)
+            try
+            {
+                columnTypeNames[i] = reader.GetDataTypeName(i);
+            }
+            catch
+            {
+                columnTypeNames[i] = string.Empty;
+            }
             columnWidths[i] = Math.Max(columnNames[i].Length, 10); // Minimum width of 10
         }
 
@@ -221,8 +225,8 @@ Please provide only the T-SQL statement without explanations or formatting.";
             var row = new object[columnCount];
             for (int i = 0; i < columnCount; i++)
             {
-                row[i] = await reader.IsDBNullAsync(i) ? "NULL" : reader.GetValue(i);
-                var valueLength = row[i].ToString()?.Length ?? 4;
+                row[i] = await SafeGetDisplayValueAsync(reader, i, columnTypeNames[i], cancellationToken);
+                var valueLength = row[i]?.ToString()?.Length ?? 4;
                 columnWidths[i] = Math.Max(columnWidths[i], valueLength);
             }
             rows.Add(row);
@@ -242,5 +246,54 @@ Please provide only the T-SQL statement without explanations or formatting.";
         result.Append($"\n({rows.Count} row(s) returned)").Append("\n");
 
         return result.ToString();
+    }
+
+    private static async Task<object> SafeGetDisplayValueAsync(DbDataReader reader, int ordinal, string typeName, CancellationToken cancellationToken)
+    {
+        if (await reader.IsDBNullAsync(ordinal, cancellationToken))
+        {
+            return "NULL";
+        }
+
+        try
+        {
+            // Try normal retrieval first
+            return reader.GetValue(ordinal);
+        }
+        catch (Exception ex) when (IsMissingSqlServerTypes(ex))
+        {
+            // Gracefully handle spatial/UDT values when Microsoft.SqlServer.Types isn't available
+            var tn = (typeName ?? string.Empty).ToLowerInvariant();
+            var hint = tn switch
+            {
+                "geography" => "Use STAsText(), AsTextZM(), or CAST to nvarchar in your SELECT.",
+                "geometry" => "Use STAsText(), AsTextZM(), or CAST to nvarchar in your SELECT.",
+                "hierarchyid" => "Use ToString() or CAST to nvarchar in your SELECT.",
+                _ => "Use CAST/CONVERT or server-side functions to text."
+            };
+            return $"<{(string.IsNullOrEmpty(typeName) ? "UDT" : typeName)} value not displayed; install Microsoft.SqlServer.Types or {hint}>";
+        }
+        catch (Exception ex)
+        {
+            // As a last resort, avoid failing the whole query; show error per-cell
+            return $"<error: {ex.Message}>";
+        }
+    }
+
+    private static bool IsMissingSqlServerTypes(Exception ex)
+    {
+        // Walk inner exceptions to find the assembly load failure for Microsoft.SqlServer.Types
+        for (var e = ex; e != null; e = e.InnerException!)
+        {
+            if (e is System.IO.FileNotFoundException fnf)
+            {
+                var msg = fnf.Message ?? string.Empty;
+                if (msg.Contains("Microsoft.SqlServer.Types", StringComparison.OrdinalIgnoreCase))
+                {
+                    return true;
+                }
+            }
+        }
+        return false;
     }
 }

@@ -1,11 +1,14 @@
 ﻿#nullable disable
+using Microsoft.Extensions.Logging.Abstractions;
+using MSSQL.MCP.Database;
+using MSSQL.MCP.Tools;
+using System;
 using System.Collections.Generic;
 using System.Data;
 using System.Data.Common;
 using System.Linq;
-using Microsoft.Extensions.Logging.Abstractions;
-using MSSQL.MCP.Database;
-using MSSQL.MCP.Tools;
+using System.Threading;
+using System.Threading.Tasks;
 using Xunit;
 
 namespace MSSQL.MCP.IntegrationTests.Tools
@@ -88,6 +91,7 @@ namespace MSSQL.MCP.IntegrationTests.Tools
 
             Assert.Contains("Invalid T-SQL syntax", result);
         }
+
 
         private class FakeSqlConnectionFactory : IDbConnectionFactory
         {
